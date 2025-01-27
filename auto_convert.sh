@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the ingest and output directories
-INGEST_DIR="/ingest"
-OUTPUT_DIR="/output"
+INGEST_DIR="/autoconvert/ingest"
+OUTPUT_DIR="/autoconvert/output"
 
 # Check if there are any files in the ingest directory
 if [ "$(ls -A $INGEST_DIR)" ]; then
