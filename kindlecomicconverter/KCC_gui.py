@@ -37,7 +37,7 @@ from packaging.version import Version
 from raven import Client
 from tempfile import gettempdir
 
-from .shared import HTMLStripper, sanitizeTrace, walkLevel, subprocess_run
+from .shared import HTMLStripper, available_archive_tools, sanitizeTrace, walkLevel, subprocess_run
 from . import __version__
 from . import comic2ebook
 from . import metadata
@@ -244,6 +244,7 @@ class WorkerThread(QThread):
         options.cropping = GUI.croppingBox.checkState().value
         if GUI.croppingBox.checkState() != Qt.CheckState.Unchecked:
             options.croppingp = float(GUI.croppingPowerValue)
+        options.interpanelcrop = GUI.interPanelCropBox.checkState().value
         if GUI.borderBox.checkState() == Qt.CheckState.PartiallyChecked:
             options.white_borders = True
         elif GUI.borderBox.checkState() == Qt.CheckState.Checked:
@@ -252,6 +253,8 @@ class WorkerThread(QThread):
             options.batchsplit = 2
         if GUI.colorBox.isChecked():
             options.forcecolor = True
+        if GUI.reduceRainbowBox.isChecked():
+            options.reducerainbow = True
         if GUI.maximizeStrips.isChecked():
             options.maximizestrips = True
         if GUI.disableProcessingBox.isChecked():
@@ -314,13 +317,8 @@ class WorkerThread(QThread):
                 GUI.progress.content = ''
                 self.errors = True
                 _, _, traceback = sys.exc_info()
-                if len(err.args) == 1:
-                    MW.showDialog.emit("Error during conversion %s:\n\n%s\n\nTraceback:\n%s"
-                                       % (jobargv[-1], str(err), sanitizeTrace(traceback)), 'error')
-                else:
-                    MW.showDialog.emit("Error during conversion %s:\n\n%s\n\nTraceback:\n%s"
-                                       % (jobargv[-1], str(err.args[0]), err.args[1]), 'error')
-                    GUI.sentry.extra_context({'realTraceback': err.args[1]})
+                MW.showDialog.emit("Error during conversion %s:\n\n%s\n\nTraceback:\n%s"
+                                   % (jobargv[-1], str(err), sanitizeTrace(traceback)), 'error')
                 if ' is corrupted.' not in str(err):
                     GUI.sentry.captureException()
                 MW.addMessage.emit('Error during conversion! Please consult '
@@ -789,11 +787,13 @@ class KCCGUI(KCC_ui.Ui_mainWindow):
                                            'gammaBox': GUI.gammaBox.checkState().value,
                                            'croppingBox': GUI.croppingBox.checkState().value,
                                            'croppingPowerSlider': float(self.croppingPowerValue) * 100,
+                                           'interPanelCropBox': GUI.interPanelCropBox.checkState().value,
                                            'upscaleBox': GUI.upscaleBox.checkState().value,
                                            'borderBox': GUI.borderBox.checkState().value,
                                            'webtoonBox': GUI.webtoonBox.checkState().value,
                                            'outputSplit': GUI.outputSplit.checkState().value,
                                            'colorBox': GUI.colorBox.checkState().value,
+                                           'reduceRainbowBox': GUI.reduceRainbowBox.checkState().value,
                                            'disableProcessingBox': GUI.disableProcessingBox.checkState().value,
                                            'mozJpegBox': GUI.mozJpegBox.checkState().value,
                                            'widthBox': GUI.widthBox.value(),
@@ -922,7 +922,8 @@ class KCCGUI(KCC_ui.Ui_mainWindow):
             "CBZ": {'icon': 'CBZ', 'format': 'CBZ'},
             "EPUB (Calibre KFX)": {'icon': 'EPUB', 'format': 'KFX'},
             "MOBI + EPUB": {'icon': 'MOBI', 'format': 'MOBI+EPUB'},
-            "EPUB (200MB limit)": {'icon': 'EPUB', 'format': 'EPUB-200MB'}
+            "EPUB (200MB limit)": {'icon': 'EPUB', 'format': 'EPUB-200MB'},
+            "MOBI + EPUB (200MB limit)": {'icon': 'MOBI', 'format': 'MOBI+EPUB-200MB'},
         }
 
 
@@ -1066,19 +1067,12 @@ class KCCGUI(KCC_ui.Ui_mainWindow):
             self.addMessage('Since you are a new user of <b>KCC</b> please see few '
                             '<a href="https://github.com/ciromattia/kcc/wiki/Important-tips">important tips</a>.',
                             'info')
-        try:
-            subprocess_run(['tar'], stdout=PIPE, stderr=STDOUT)
-            self.tar = True
-        except FileNotFoundError:
-            self.tar = False
-        try:
-            subprocess_run(['7z'], stdout=PIPE, stderr=STDOUT)
-            self.sevenzip = True
-        except FileNotFoundError:
-            self.sevenzip = False
-            if not self.tar:
-                self.addMessage('<a href="https://github.com/ciromattia/kcc#7-zip">Install 7z (link)</a>'
-                                ' to enable CBZ/CBR/ZIP/etc processing.', 'warning')
+        
+        self.tar = 'tar' in available_archive_tools()
+        self.sevenzip = '7z' in available_archive_tools()
+        if not any([self.tar, self.sevenzip]):
+            self.addMessage('<a href="https://github.com/ciromattia/kcc#7-zip">Install 7z (link)</a>'
+                            ' to enable CBZ/CBR/ZIP/etc processing.', 'warning')
         self.detectKindleGen(True)
 
         APP.messageFromOtherInstance.connect(self.handleMessage)
